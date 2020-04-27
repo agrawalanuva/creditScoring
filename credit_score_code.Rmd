@@ -1,7 +1,9 @@
 
 ## Reading and cleaning Data
 ```{r}
-data<-read.csv("/home/aakash/Documents/personal/germanCredit.csv")
+data<-read.csv("/home/anuva/Documents/personal/germanCredit.csv")
+#change this path to your sample data location
+
 #data$chk_acct<- as.factor(data$chk_acct)
 #data$history<- as.factor(data$history)
 #data$new_car<- as.factor(data$new_car)
