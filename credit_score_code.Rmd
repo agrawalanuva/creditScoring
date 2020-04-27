@@ -1,0 +1,198 @@
+
+## Reading and cleaning Data
+```{r}
+data<-read.csv("/home/aakash/Documents/personal/germanCredit.csv")
+#data$chk_acct<- as.factor(data$chk_acct)
+#data$history<- as.factor(data$history)
+#data$new_car<- as.factor(data$new_car)
+#data$used_car<- as.factor(data$used_car)
+#data$furniture<- as.factor(data$furniture)
+#data$radio.tv<- as.factor(data$radio.tv)
+#data$education<- as.factor(data$education)
+#data$retraining<- as.factor(data$retraining)
+#data$sav_acct<- as.factor(data$sav_acct)
+#data$employment<- as.factor(data$employment)
+#data$male_div<- as.factor(data$male_div)
+#data$male_single<- as.factor(data$male_single)
+#data$co.applicant<- as.factor(data$co.applicant)
+#data$guarantor<- as.factor(data$guarantor)
+#data$present_resident<- as.factor(data$present_resident)
+#data$real_estate<- as.factor(data$real_estate)
+#data$prop_unkn_none<- as.factor(data$prop_unkn_none)
+#data$other_install<- as.factor(data$other_install)
+#data$rent<- as.factor(data$rent)
+#data$own_res<- as.factor(data$own_res)
+#data$job<- as.factor(data$job)
+#data$telephone<- as.factor(data$telephone)
+#data$foreign<- as.factor(data$foreign)
+data$amount<-as.double(data$amount)
+data$amount<-as.factor(ifelse(data$amount<=2500,'0-
+2500',ifelse(data$amount<=5000,'2600-5000','5000+')))
+data$response<- as.factor(data$response)
+```
+
+## Dividing data in train and test set
+```{r}
+d = sort(sample(nrow(data), nrow(data)*.6))
+#select training sample
+train<-data[d,]
+test<-data[-d,]
+```
+
+## Liner Regression Model
+```{r}
+m<-glm(response~.,data=train,family=binomial())
+#load library
+library(ROCR)
+#score test data set
+test$score<-predict(m,type='response',test)
+linear_model_pred<-prediction(test$score,test$response)
+linear_model_perf<-performance(linear_model_pred,"tpr","fpr")
+plot(linear_model_perf)
+```
+
+# NOT REQUIRED !!!
+```{r}
+#get results of terms in regression
+g<-predict(m,type='terms',test)
+#function to pick top 3 reasons
+#works by sorting coefficient terms in equation
+# and selecting top 3 in sort for each loan scored
+ftopk<- function(x,top=3){
+res=names(x)[order(x, decreasing = TRUE)][1:top]
+paste(res,collapse=";",sep="")
+}
+# Application of the function using the top 3 rows
+topk=apply(g,1,ftopk,top=3)
+#add reason list to scored tets sample
+test<-cbind(test, topk)
+```
+
+
+
+## Using Basic tree classification(Training)
+```{r}
+library(rpart)
+library(rpart.plot)
+fit1<-rpart(response~.,data=train)
+plot(fit1,uniform=TRUE,margin=0.026);text(fit1)
+```
+
+
+## Using Basic tree classification(Testing)
+```{r}
+test$tscore1<-predict(fit1,type='prob',test)
+basic_tree_pred<-prediction(test$tscore1[,2],test$response)
+basic_tree_perf <- performance(basic_tree_pred,"tpr","fpr")
+plot(basic_tree_perf)
+```
+
+## Build tree model using 90% 10% priors(Training)
+```{r}
+fit2<-rpart(response~.,data=train,parms=list(prior=c(.9,.1)),cp=.0002)
+rpart.plot(fit2,type=3,uniform=TRUE);text(fit2)
+```
+
+## Build tree model using 90% 10% priors(Testing)
+```{r}
+test$tscore2<-predict(fit2,type='prob',test)
+improved_tree_pred<-prediction(test$tscore2[,2],test$response)
+improved_tree_perf<- performance(improved_tree_pred,"tpr","fpr")
+plot(improved_tree_perf)
+```
+
+## Ctree (Ploting Trained data)
+```{r}
+library(party)
+cfit1<-ctree(response~.,data=train)
+plot(cfit1)
+```
+
+## Ctree (Training model)
+```{r}
+resultdfr <- as.data.frame(do.call("rbind", treeresponse(cfit1, newdata = test)))
+test$tscore3<-resultdfr[,2]
+ctree_model_pred<-prediction(test$tscore3,test$response)
+ctree_model_pref <- performance(ctree_model_pred,"tpr","fpr")
+plot(ctree_model_pref)
+```
+
+
+## Random Forest model(Training)
+
+```{r}
+library(randomForest)
+arf<-randomForest(response~.,data=train,importance=TRUE,proximity=TRUE,ntree=500, keep.forest=TRUE)
+#plot variable importance
+varImpPlot(arf)
+```
+## Random forest(Testing)
+```{r}
+testp4<-predict(arf,test,type='prob')[,2]
+random_forest_pred<-prediction(testp4,test$response)
+random_forest_perf <- performance(random_forest_pred,"tpr","fpr")
+plot(random_forest_perf)
+```
+
+## Improving linear model performance using Random Forest
+```{r}
+m2<-glm(response~.+age:history+age:duration
++chk_acct:install_rate+chk_acct:duration,data=train,family=binomial())
+test$score2<-predict(m2,type='response',test)
+improved_linear_pred<-prediction(test$score2,test$response)
+improved_linear_perf<- performance(improved_linear_pred,"tpr","fpr")
+plot(improved_linear_perf)
+```
+
+## Comparing performance of models
+```{r}
+#Plotting linear Model
+plot(linear_model_perf,col='red',lty=1,main='Comparing Performance');
+
+#Plotting Basic Tree classifier
+plot(basic_tree_perf, col='green',add=TRUE,lty=2);
+legend(0.6,0.6,c('Linear Model','Basic tree classification'),col=c('red','green'),lwd=3)
+
+#Plotting Improved Tree Classifier(using 90/10 prior)
+plot(improved_tree_perf, col='blue',add=TRUE,lty=3);
+legend(0.6,0.6,c('Linear Model','Basic tree classification','Improved Tree Classifier'),col=c('red','green','blue'),lwd=3)
+
+#Plotting Ctree Classifier
+plot(ctree_model_pref, col='orange',add=TRUE,lty=4);
+legend(0.6,0.6,c('Linear Model','Basic tree classification','Improved Tree Classifier','C-Tree Classifier'),col=c('red','green','blue','orange'),lwd=3)
+
+#Plotting Random forest Model
+plot(random_forest_perf, col='purple',add=TRUE,lty=5);
+legend(0.6,0.6,c('Linear Model','Basic tree classification','Improved Tree Classifier','C-Tree Classifier','Random Forest'),col=c('red','green','blue','orange','purple'),lwd=3)
+
+#Plotting Improved linear model using Random forest
+plot(improved_linear_perf, col='black',add=TRUE,lty=6);
+legend(0.6,0.6,c('Linear Model','Basic tree classification','Improved Tree Classifier','C-Tree Classifier','Random Forest','Improved Liner Model'),col=c('red','green','blue','orange','purple','black'),lwd=3)
+
+```
+
+## Formula for getting Area under curve(run for each pred model)
+```{r}
+performance(linear_model_pred,"auc")
+```
+
+
+## Formula for KS (Run for each perf model)
+```{r}
+max(attr(improved_linear_perf,'y.values')[[1]]-attr(improved_linear_perf,'x.values')[[1]])
+```
+
+
+## Performance Index
+
+
+| Model                        | Area Under Curve | KS        | % Improvement |
+|------------------------------|------------------|-----------|---------------|
+| Linear Model                 | 0.794751         | 0.4834949 |               |
+| Basic Tree Classification    | 0.7102776        | 0.3545649 |               |
+| Improved Tree Classification | 0.7219504        | 0.3848872 |               |
+| C-Tree Classification        | 0.7036785        | 0.3407629 |               |
+| Random Forest                | 0.8096554        | 0.4755217 |               |
+| Improved Linear Model        | 0.7948416        | 0.4865453 |               |
+
+
